@@ -6,6 +6,7 @@
 #include "sysTime.h"
 #include "UART.h"
 #include "ADC.h"
+#include "PWM.h"
 
 //Timer flags
 uint32_t lastBlinkTime = 0;
@@ -13,6 +14,8 @@ uint32_t lastPressTime = 0;
 uint32_t lastPotTime = 0;
 uint32_t lastCheckTime = 0;
 
+uint16_t BLINK_DURATION = 0;
+uint8_t  BRIGHTNESS = 0;
 
 uint16_t potVal0 = 0;
 uint16_t potVal1 = 0;
@@ -20,44 +23,58 @@ uint16_t potVal1 = 0;
 bool messageState = false;
 
 int main(void){
+// SETUP
 sei();
-ADC_init();
 sysTime_init();
 UART_init(9600);
-DDRB |= (1<<PB1); //PB1 OUTPUT
-DDRB |= (1<<PB0); 
-DDRD &= ~(1<<PD7); //Button Input
-PORTD |= (1<<PD7);
-PORTC &= ~(1<<PC0);
-//DDRB = DDRB | (1<<PB1);  DDRB = 0b00000000 | 0b00000010 = 0b00000010
+ADC_init();
+PWM_init();
 
-    while(1){
+DDRB |= (1<<PB1);  // D9 - GREEN
+DDRB |= (1<<PB0);  // D8 - BLUE
+DDRD &= ~(1<<PD7); // BUTTON
+DDRC &= ~(1<<PC0); // POT 1
+DDRC &= ~(1<<PC1); // POT 2
 
-//time 0 | current = 0, last = 0
-//time 1 | current = 1, last = 0 => last = currentTime
-//time 2 | current = 2, last = 1 => last = currentTime
+PORTD|= (1<<PD7);  // Button as Active High
+
+// MAIN LOOP
+while(1){
 
 potVal0 = ADC_read(0);
 potVal1 = ADC_read(1);
-int BLINK_DURATION = (625 * potVal0)/125;
-if(potVal0 <= 20) BLINK_DURATION = 0;
-if(potVal0 >= 1010) BLINK_DURATION = 5000;
 
+BLINK_DURATION = (625UL * potVal0)/125;
+BRIGHTNESS = (255UL*potVal1)/1023;
+
+if(potVal0 <= 20) BLINK_DURATION = 0;
+if(potVal0 >= 1000) BLINK_DURATION = 5000;
+if(potVal1 <= 20) BRIGHTNESS = 0;
+if(potVal1 >= 1000) BRIGHTNESS = 255;
 uint32_t currentTime = sysTime();
 
-//Blink - LED
-
+/* ================= SYSTEM TIME PRINTER ====================  */
 if(currentTime - lastCheckTime >= 1000){
     printString("Time: "); printInt(currentTime); printString("\r\n");
     lastCheckTime = currentTime;
 }
 
+/* ================= LED BLINKER ==================== */
 if(currentTime - lastBlinkTime >= BLINK_DURATION){
-PORTB ^= (1<<PB1);
-lastBlinkTime = currentTime;
+    static bool ledState = false;
+
+    if (ledState) {
+        LED_brightness(0); // OFF
+    } else {
+        LED_brightness(BRIGHTNESS); // ON
+    }
+
+    ledState = !ledState;
+    lastBlinkTime = currentTime;
 }
 
-//Button - LED
+
+/* ================= 'HELLO WORLD BUTTON' ==================== */
 if(currentTime - lastPressTime >= 5){ //Debounce
 if(!(PIND & (1<<PD7))){
     PORTB |= (1<<PB0); //ON
@@ -65,7 +82,6 @@ if(!(PIND & (1<<PD7))){
         printString("Hello World! \r\n");
         messageState = true;
     }
-    
     lastPressTime = currentTime;
 }else{
     PORTB &= ~(1<<PB0); //OFF
@@ -73,10 +89,13 @@ if(!(PIND & (1<<PD7))){
 }
 }
 
+/* ==================== PRINTING POT VALUES ====================== */
 if(currentTime - lastPotTime >= 100){
-    //printString("Pot Value: "); printInt(potVal1); printString("\r\n");
+    //printString("Pot Value: "); printInt(potVal0); printString("\r\n");
     lastPotTime = currentTime;
 }
+
+
 
 }
 
